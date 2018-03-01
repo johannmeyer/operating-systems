@@ -1,0 +1,166 @@
+#include <wiringPi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <math.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define LED1 7
+#define LED2 0
+#define LED3 2
+#define LED4 3
+
+struct data
+{
+	int target_num;
+	int terminate;
+};
+
+struct io_params
+{
+	FILE *stream;
+	int terminate;
+};
+
+void *input_func(void *v_data);
+
+int main(int argc, char**args)
+{
+
+	if (argc != 2)
+	{
+		printf("Please add the number as cmd argument.\n");
+		exit(1);
+	}
+
+	wiringPiSetup();
+	
+	// set GPIO pin modes
+	pinMode(LED1, OUTPUT);
+	pinMode(LED2, OUTPUT);
+	pinMode(LED3, OUTPUT);
+	pinMode(LED4, OUTPUT);
+	
+	// switch off LEDS
+	digitalWrite(LED1, LOW);
+	digitalWrite(LED2, LOW);
+	digitalWrite(LED3, LOW);
+	digitalWrite(LED4, LOW);
+	
+	sleep(1);
+	
+	// create data to be shared between threads.
+	struct data *data= malloc(sizeof(struct data));
+	
+	//convert string arg to int
+	data->target_num = atoi(args[1]);
+	data->terminate = FALSE;
+	
+	if (data->target_num < 0 || data->target_num > 15)
+	{
+		printf("Invalid Number\n");
+		exit(1);
+	}
+	
+	pthread_t pthread_input;
+	int ret = pthread_create(&pthread_input, NULL, &input_func, data);
+
+	// open file
+	struct io_params *io_params = malloc(sizeof(struct io_params));
+	io_params->stream = fopen("data.txt", "r");
+	perror("fopen");
+	
+	int curr_num = 0;
+	while(!data->terminate)	
+	{
+		if (data->target_num != curr_num)
+		{
+			if (data->target_num > curr_num)
+				curr_num++;
+			else
+				curr_num--;
+				
+			if(curr_num & (1<<3))
+				digitalWrite(LED4, HIGH);
+			else
+				digitalWrite(LED4, LOW);
+			if(curr_num & (1<<2))	
+				digitalWrite(LED3, HIGH);
+			else
+				digitalWrite(LED3, LOW);
+			if(curr_num & (1<<1))
+				digitalWrite(LED2, HIGH);
+			else
+				digitalWrite(LED2, LOW);
+			if(curr_num & (1<<0))
+				digitalWrite(LED1, HIGH);
+			else
+				digitalWrite(LED1, LOW);
+			usleep(200000); // 200ms delay
+		}	
+	}
+	
+	// switch off LEDS
+	digitalWrite(LED1, LOW);
+	digitalWrite(LED2, LOW);
+	digitalWrite(LED3, LOW);
+	digitalWrite(LED4, LOW);
+
+	// kill io thread first
+	
+	// close file
+	fclose(stream);
+	
+	// free heap
+	free(data);
+}
+
+void *input_func(void *v_data)
+{
+	struct data *data = (struct data *)v_data;
+	
+	while(1) // keep reading input
+	{
+		//read in int
+		scanf("%d", &data->target_num);
+
+		if (data->target_num == -1) // exit condition
+		{
+			// don't switch off lights here
+			// it can lead to race condition!
+			data->terminate = TRUE;
+			return; // exit would kill other thread
+		}	
+		else if (data->target_num < 0 || data->target_num > 15)
+		{
+			printf("Invalid Number\n");
+		}	
+	}
+}
+
+void *read_from_file(void *args)
+{
+
+	FILE *stream; // Todo set = to args value
+	double num;
+	double n;
+	double cum_sum = 0;
+	clock_t start, done
+	
+	start = clock(); // start timer
+	while(fscanf(stream, "%lf\n", &num) != EOF) // TODO add or with terminate cond
+	{
+		n = atan(tan(n));
+		cum_sum += n;
+	}
+	
+	if (!terminate)
+	{
+		done = clock(); // computation done
+		printf("Cumulative sum: %f\n", cum_sum);
+		printf("Time taken: %f\n", done - start);
+	}
+}
