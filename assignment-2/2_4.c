@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <wiringPi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
+#define MAIN_PRIORITY 10
+#define IO_PRIORITY 10
+#define INPUT_PRIORITY 10
 
 #define LED1 7
 #define LED2 0
@@ -22,6 +27,8 @@ struct data
 
 void *input_func(void *v_data);
 void *read_from_file(void *arg);
+void busy_wait(int s);
+void print_sched_specs(pthread_t thread, char *mesg);
 
 int main(int argc, char**args)
 {
@@ -46,6 +53,17 @@ int main(int argc, char**args)
 	digitalWrite(LED3, LOW);
 	digitalWrite(LED4, LOW);
 	
+	// define thread properties
+	pthread_attr_t attr;
+	pthread_attr_init(&attr); // init attributes
+	// don't inherit parent attributes
+	pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+	// set scheduling policy to round robin
+	pthread_attr_setschedpolicy(&attr, SCHED_RR);
+	struct sched_param param;
+	param.sched_priority = INPUT_PRIORITY; // set thread priority
+	pthread_attr_setschedparam(&attr, &param);
+	
 	// create data to be shared between threads.
 	struct data *data= malloc(sizeof(struct data));
 	
@@ -59,13 +77,41 @@ int main(int argc, char**args)
 		exit(1);
 	}
 	
+	print_sched_specs(pthread_self(), "main");
+	
 	// start input thread
 	pthread_t pthread_input;
-	int ret = pthread_create(&pthread_input, NULL, &input_func, data);
+	int ret = pthread_create(&pthread_input, &attr, &input_func, data);
+	if (ret != 0)
+	{
+		printf("create pthread error: input. Try run as sudo\n");		
+		data->terminate = TRUE;
+	}
+		
+	// set parameters of IO thread
+	param.sched_priority = IO_PRIORITY; // set thread priority
+	pthread_attr_setschedparam(&attr, &param);
 
 	// start file reading thread
 	pthread_t pthread_io;
-	ret = pthread_create(&pthread_io, NULL, &read_from_file, &data->terminate);
+	ret = pthread_create(&pthread_io, &attr, &read_from_file, &data->terminate);
+	if (ret != 0)
+	{
+		printf("create pthread error: io. Try run as sudo\n");
+		data->terminate = TRUE;
+	}
+	
+	pthread_attr_destroy(&attr); // release the memory for the attr
+
+	// set main thread properties
+	param.sched_priority = MAIN_PRIORITY;
+	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param); 
+	if (ret != 0)
+		printf("Failed to set main thread sched param\n");
+	
+	print_sched_specs(pthread_input, "input");
+	print_sched_specs(pthread_io, "io");	
+	print_sched_specs(pthread_self(), "main");
 	
 	int curr_num = 0;
 	while(!data->terminate)	
@@ -93,7 +139,8 @@ int main(int argc, char**args)
 				digitalWrite(LED1, HIGH);
 			else
 				digitalWrite(LED1, LOW);
-			usleep(200000); // 200ms delay
+			busy_wait(200000);
+			//usleep(200000); // 200ms delay
 		}	
 	}
 	
@@ -140,6 +187,7 @@ void *input_func(void *v_data)
 
 void *read_from_file(void *arg)
 {
+	// set variables
 	int *terminate = (int *)arg;
 	
 	double n;
@@ -179,4 +227,21 @@ void *read_from_file(void *arg)
 	// close file
 	fclose(stream);
 	perror("fclose");
+}
+
+void busy_wait(int s)
+{
+	clock_t now = clock();
+	while(clock() < now + s);
+}
+
+void print_sched_specs(pthread_t thread, char *mesg)
+{
+	// check thread properties
+	int policy;
+	struct sched_param param;
+	pthread_getschedparam(thread, &policy, &param);
+
+	printf("%s Priority: %d\n", mesg, param.sched_priority);
+	printf("%s Policy: %d\n", mesg, policy);
 }
