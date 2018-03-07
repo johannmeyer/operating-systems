@@ -172,7 +172,7 @@ void *input_func(void *v_data)
 			// don't switch off lights here
 			// it can lead to race condition!
 			data->terminate = TRUE;
-			return; // exit would kill other thread
+			return NULL; // exit would kill other thread
 		}	
 		else if (test_num < 0 || test_num > 15)
 		{
@@ -202,7 +202,7 @@ void *read_from_file(void *arg)
 		// if file does not open let other
 		// threads know and exit
 		*terminate = TRUE;
-		return;
+		return NULL;
 	}
 	
 	start = clock(); // start timer
@@ -227,6 +227,7 @@ void *read_from_file(void *arg)
 	// close file
 	fclose(stream);
 	perror("fclose");
+	return NULL;
 }
 
 void busy_wait(int s)

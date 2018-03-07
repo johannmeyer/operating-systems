@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define LED1 7
 #define LED2 0
@@ -55,7 +56,7 @@ int main(int argc, char**args)
 	}
 	
 	pthread_t pthread_input;
-	int ret = pthread_create(&pthread_input, NULL, &input_func, data);
+	pthread_create(&pthread_input, NULL, &input_func, data);
 	
 	int curr_num = 0;
 	while(!data->terminate)	
@@ -110,7 +111,7 @@ void *input_func(void *v_data)
 			// don't switch off lights here
 			// it can lead to race condition!
 			data->terminate = TRUE;
-			return; // exit would kill other thread
+			return NULL; // exit would kill other thread
 		}	
 		else if (data->target_num < 0 || data->target_num > 15)
 		{
