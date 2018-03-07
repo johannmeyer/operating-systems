@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 #define MAIN_PRIORITY 10
-#define IO_PRIORITY 10
+#define IO_PRIORITY 15
 #define INPUT_PRIORITY 10
 
 #define LED1 7
