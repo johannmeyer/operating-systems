@@ -21,6 +21,12 @@
 
 dir_t* root_dir;
 
+static void os_destroy(void *private_data)
+{
+	num_files = 0;
+	setLEDs();
+}
+
 /**
  * Here, we fill DFS with a number of directories and files.
  * Add, remove and rename some files and directories, if you wish.
@@ -73,15 +79,20 @@ static int os_readdir(const char *path, void *buff, fuse_fill_dir_t fill, off_t 
         return -ENOENT; // Error: no entity
     }
 
-    // Example: this is how you add a folder "Documents" to the buffer
-    // although this "Documents" folder does not exist.
-    fill(buff, "Documents", NULL, 0);
+	// parent and current directory.
+    fill(buff, ".", NULL, 0);		
+    fill(buff, "..", NULL, 0);		
 
-    // Example: this is how you could iterate over all files in dir
-    // and it's almost the same for directories
+    // Iterate over list of directories in current folder
+    for (unsigned int i = 0; i < dir->dirs->length; i++) {
+        dir_t* ptr = (dir_t *) get_p(dir->dirs, i);
+	    fill(buff, ptr->name, NULL, 0);		
+	}
+	
+    // Iterate over list of files in current folder    
     for (unsigned int i = 0; i < dir->files->length; i++) {
         file_t* ptr = (file_t *) get_p(dir->files, i);
-        // Do something with this file
+        fill(buff, ptr->name, NULL, 0);
     }
 
     // Returning 0 means all-ok.
@@ -96,7 +107,20 @@ static int os_readdir(const char *path, void *buff, fuse_fill_dir_t fill, off_t 
  * Returns 0 if successful, appropriate error otherwise.
  */
 static int os_mkdir(const char* path, mode_t mode) {
+    // get path to new directory
+    char *dir_path = get_dirs_from_path(path);
+    
+    char *dir_name = get_name_from_path(path);
+    
+    dir_t* dir = find_dir(root_dir, dir_path);
+    if (dir == NULL) {
+        return -ENOENT; // Error: no entity
+    }
 
+	// add directory to current folder
+    dir_t* new_dir = create_dir(dir_name);
+    add_dir_to(dir, new_dir);
+    
     return 0;
 }
 
@@ -108,7 +132,12 @@ static int os_mkdir(const char* path, mode_t mode) {
  * Returns 0, appropriate error otherwise.
  */
 static int os_rmdir(const char* path) {
-
+    dir_t* dir = find_dir(root_dir, path);
+	if (dir == NULL) {
+        return -ENOENT; // Error: no entity
+    }
+    	
+	destroy_dir(dir);
     return 0;
 }
 
@@ -124,8 +153,20 @@ static int os_rmdir(const char* path) {
  * returns number of bytes read
  */
 static int os_read(const char* path, char* buff, size_t size, off_t off, struct fuse_file_info* fi) {
-
-    return 0;
+	
+	file_t *file = find_file(root_dir, path);
+	if (file == NULL) {
+        return -ENOENT; // Error: no entity
+    }
+    
+    // ensure reads are within the file
+    size_t len = strlen(file->contents);
+    if (off > len) // offset in file is outside file
+    	return 0; // nothing left to read
+    else if(len < size +off) // requested size will read outside file
+		size -= len-off;
+    strncpy(buff, file->contents+off, size);
+    return size;
 }
 
 /**
@@ -139,8 +180,25 @@ static int os_read(const char* path, char* buff, size_t size, off_t off, struct 
  * - fi: not used
  */
 static int os_write(const char* path, const char* buff, size_t size, off_t off, struct fuse_file_info* fi) {
-
-    return 0;
+	file_t *file = find_file(root_dir, path);
+	if (file == NULL) {
+        return -ENOENT; // Error: no entity
+    }
+    
+    // check if file needs to be expanded
+    size_t len = strlen(file->contents);
+    if (off + size > len)    
+    {
+    	char *new_buffer = realloc(file->contents, off+size+1);
+    	if (new_buffer != NULL)
+    		file->contents = new_buffer;
+    	else
+    		return 0;
+    }
+    
+    memcpy(file->contents+off, buff, size);
+    file->contents[off+size+1] = '\0';
+    return size;
 }
 
 /**
@@ -152,7 +210,19 @@ static int os_write(const char* path, const char* buff, size_t size, off_t off, 
  * - fi: not used.
  */
 static int os_create(const char * path, mode_t mode, struct fuse_file_info* fi) {
+	// get path to new directory
+    char *dir_path = get_dirs_from_path(path);
+    
+    char *file_name = get_name_from_path(path);
+    
+    dir_t* dir = find_dir(root_dir, dir_path);
+    if (dir == NULL) {
+        return -ENOENT; // Error: no entity
+    }
 
+	// add directory to current folder
+    file_t* new_file = create_file(file_name, "");
+    add_file_to(dir, new_file);
     return 0;
 }
 
@@ -164,7 +234,12 @@ static int os_create(const char * path, mode_t mode, struct fuse_file_info* fi) 
  * Returns 0 if successful, appropriate error otherwise.
  */
 static int os_unlink(const char* path) {
-    
+	file_t* file = find_file(root_dir, path);
+	if (file == NULL) {
+        return -ENOENT; // Error: no entity
+    }
+    	
+	destroy_file(file);    
     return 0;
 }
 
@@ -240,6 +315,7 @@ static int os_utimens(const char* a, const struct timespec tv[2]) { return 0; }
  * and will not allow you to call them!
  */
 static struct fuse_operations operations = {
+    .destroy = os_destroy,
     .getattr = os_getattr,
     .readdir = os_readdir,
     .read = os_read,

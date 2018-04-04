@@ -20,6 +20,12 @@
 #include <stdlib.h>
 #include "os_list.c"
 
+#include <wiringPi.h>
+#define LED1 7
+#define LED2 0
+#define LED3 2
+#define LED4 3
+
 // Basic file type, with a name, contents, and parent dir.
 typedef struct file_t {
     char* name;
@@ -34,6 +40,35 @@ typedef struct dir_t {
     list_t* dirs;
     struct dir_t* parent;
 } dir_t;
+
+int num_files = 0;
+
+void setLEDs()
+{
+	wiringPiSetup();
+	pinMode(LED1, OUTPUT);
+	pinMode(LED2, OUTPUT);
+	pinMode(LED3, OUTPUT);
+	pinMode(LED4, OUTPUT);
+	
+	if(num_files & (1<<3))
+		digitalWrite(LED4, HIGH);
+	else
+		digitalWrite(LED4, LOW);
+	if(num_files & (1<<2))    
+		digitalWrite(LED3, HIGH);
+	else
+		digitalWrite(LED3, LOW);
+	if(num_files & (1<<1))
+		digitalWrite(LED2, HIGH);
+	else
+		digitalWrite(LED2, LOW);
+	if(num_files & (1<<0))
+		digitalWrite(LED1, HIGH);
+	else
+		digitalWrite(LED1, LOW);
+}
+
 
 /**
  * Allocate memory and fill fields for a new file.
@@ -74,8 +109,13 @@ dir_t* create_dir(const char* name) {
  * - file: the file to add.
  */
 void add_file_to(dir_t* parent, file_t* file) {
-    push_back_p(parent->files, (void *) file);
-    file->parent = parent;
+    if (num_files != 16)
+    {
+    	push_back_p(parent->files, (void *) file);
+    	file->parent = parent;
+    	num_files++;
+    	setLEDs();
+    }
 }
 
 /**
@@ -103,6 +143,8 @@ void destroy_file(file_t* file) {
             }
         }
     }
+    num_files--;
+    setLEDs();
     free(file->contents);
     free(file->name);
     free(file);
